@@ -27,6 +27,7 @@ from src.features.validation import (
 )
 from src.features.transformers import TransformerContext
 from src.features.pipeline import FeaturePipeline, PipelineResult
+from src.features.export import build_analytics_dataframe, export_analytics_csv
 
 
 # =============================================================================
@@ -405,6 +406,183 @@ class TestEdgeCases:
         # Should handle all types
         assert "numeric" in result.statistics["feature_summary"]
         assert "string" in result.statistics["feature_summary"]
+        assert "boolean" in result.statistics["feature_summary"]
+        # Boolean columns get special treatment
+        assert "true_count" in result.statistics["feature_summary"]["boolean"]
+
+
+# =============================================================================
+# Export Tests
+# =============================================================================
+
+class TestBuildAnalyticsDataframe:
+    """Tests for the analytics export builder."""
+    
+    def test_combines_metadata_target_features(self, sample_features, sample_target):
+        """Test that all three sources are merged correctly."""
+        # Mock the metadata fetch
+        metadata = pd.DataFrame({
+            "email": [f"user{i}@test.com" for i in range(len(sample_features))],
+            "signup_date": pd.Timestamp("2024-06-15"),
+            "country": "US",
+            "plan_type": "Premium",
+            "subscription_status": "active",
+        }, index=sample_features.index)
+        metadata.index.name = "account_id"
+        
+        mock_engine = MagicMock()
+        result = PipelineResult(
+            features=sample_features,
+            target=sample_target,
+            validation=None,
+            metadata={"n_accounts": len(sample_features)},
+            success=True,
+        )
+        
+        # Patch the metadata query
+        with patch("src.features.export._fetch_account_metadata", return_value=metadata):
+            analytics = build_analytics_dataframe(mock_engine, result)
+        
+        # Should contain columns from all three sources
+        assert "email" in analytics.columns           # metadata
+        assert "churned" in analytics.columns          # target
+        assert "age" in analytics.columns              # features
+        
+        # Row count should match metadata (left join base)
+        assert len(analytics) == len(metadata)
+    
+    def test_handles_empty_target(self, sample_features):
+        """Test export works when target is not included."""
+        metadata = pd.DataFrame({
+            "email": [f"user{i}@test.com" for i in range(len(sample_features))],
+        }, index=sample_features.index)
+        metadata.index.name = "account_id"
+        
+        mock_engine = MagicMock()
+        result = PipelineResult(
+            features=sample_features,
+            target=pd.DataFrame(),
+            validation=None,
+            metadata={},
+            success=True,
+        )
+        
+        with patch("src.features.export._fetch_account_metadata", return_value=metadata):
+            analytics = build_analytics_dataframe(mock_engine, result)
+        
+        assert "email" in analytics.columns
+        assert "churned" not in analytics.columns
+        assert len(analytics) == len(sample_features)
+
+
+class TestExportAnalyticsCsv:
+    """Tests for the CSV export function."""
+    
+    def test_creates_stable_file(self, tmp_path, sample_features, sample_target):
+        """Test that a stable retain_analytics.csv is created."""
+        metadata = pd.DataFrame({
+            "email": [f"user{i}@test.com" for i in range(len(sample_features))],
+        }, index=sample_features.index)
+        metadata.index.name = "account_id"
+        
+        mock_engine = MagicMock()
+        result = PipelineResult(
+            features=sample_features,
+            target=sample_target,
+            validation=None,
+            metadata={},
+            success=True,
+        )
+        
+        with patch("src.features.export._fetch_account_metadata", return_value=metadata):
+            csv_path = export_analytics_csv(
+                mock_engine, result, output_dir=tmp_path
+            )
+        
+        assert csv_path.exists()
+        assert csv_path.name == "retain_analytics.csv"
+        
+        # Verify it's a valid CSV we can read back
+        df = pd.read_csv(csv_path, index_col="account_id")
+        assert len(df) == len(sample_features)
+    
+    def test_creates_snapshot(self, tmp_path, sample_features, sample_target):
+        """Test that a timestamped snapshot is also created."""
+        metadata = pd.DataFrame({
+            "email": [f"user{i}@test.com" for i in range(len(sample_features))],
+        }, index=sample_features.index)
+        metadata.index.name = "account_id"
+        
+        mock_engine = MagicMock()
+        result = PipelineResult(
+            features=sample_features,
+            target=sample_target,
+            validation=None,
+            metadata={},
+            success=True,
+        )
+        
+        with patch("src.features.export._fetch_account_metadata", return_value=metadata):
+            export_analytics_csv(mock_engine, result, output_dir=tmp_path)
+        
+        snapshot_dir = tmp_path / "snapshots"
+        assert snapshot_dir.exists()
+        
+        snapshots = list(snapshot_dir.glob("retain_analytics_*.csv"))
+        assert len(snapshots) == 1
+    
+    def test_overwrites_stable_file(self, tmp_path, sample_features, sample_target):
+        """Test that re-running overwrites the stable file."""
+        import time
+        
+        metadata = pd.DataFrame({
+            "email": [f"user{i}@test.com" for i in range(len(sample_features))],
+        }, index=sample_features.index)
+        metadata.index.name = "account_id"
+        
+        mock_engine = MagicMock()
+        result = PipelineResult(
+            features=sample_features,
+            target=sample_target,
+            validation=None,
+            metadata={},
+            success=True,
+        )
+        
+        with patch("src.features.export._fetch_account_metadata", return_value=metadata):
+            path1 = export_analytics_csv(mock_engine, result, output_dir=tmp_path)
+            time.sleep(1.1)  # Ensure different timestamp for snapshot filename
+            path2 = export_analytics_csv(mock_engine, result, output_dir=tmp_path)
+        
+        # Same stable path both times
+        assert path1 == path2
+        
+        # But two snapshots
+        snapshots = list((tmp_path / "snapshots").glob("retain_analytics_*.csv"))
+        assert len(snapshots) == 2
+    
+    def test_skip_snapshot(self, tmp_path, sample_features, sample_target):
+        """Test that snapshots can be disabled."""
+        metadata = pd.DataFrame({
+            "email": [f"user{i}@test.com" for i in range(len(sample_features))],
+        }, index=sample_features.index)
+        metadata.index.name = "account_id"
+        
+        mock_engine = MagicMock()
+        result = PipelineResult(
+            features=sample_features,
+            target=sample_target,
+            validation=None,
+            metadata={},
+            success=True,
+        )
+        
+        with patch("src.features.export._fetch_account_metadata", return_value=metadata):
+            export_analytics_csv(
+                mock_engine, result, output_dir=tmp_path, save_snapshot=False
+            )
+        
+        assert not (tmp_path / "snapshots").exists()
 
 
 if __name__ == "__main__":

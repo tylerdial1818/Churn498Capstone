@@ -19,12 +19,9 @@ Examples:
 """
 
 import argparse
-import json
 import logging
 import os
 import sys
-from datetime import datetime
-from pathlib import Path
 
 from dotenv import load_dotenv
 from rich.console import Console
@@ -213,6 +210,12 @@ def main() -> int:
         help="Show what would be done without executing",
     )
     
+    parser.add_argument(
+        "--export-analytics",
+        action="store_true",
+        help="Also write data/processed/retain_analytics.csv for ad-hoc reporting",
+    )
+    
     args = parser.parse_args()
     
     # Set up logging
@@ -252,8 +255,9 @@ def main() -> int:
         engine = create_engine(database_url)
         
         # Test connection
+        from sqlalchemy import text
         with engine.connect() as conn:
-            conn.execute("SELECT 1")
+            conn.execute(text("SELECT 1"))
         console.print("[green]✓ Database connected[/green]")
         
         # Create and run pipeline
@@ -281,8 +285,17 @@ def main() -> int:
             return 1
         
         # Save results
-        output_file = pipeline.save(result)
+        output_file = pipeline.save(
+            result, 
+            export_analytics=args.export_analytics,
+        )
         console.print(f"\n[bold]Output saved to:[/bold] {output_file}")
+        
+        if args.export_analytics:
+            console.print(
+                f"[bold]Analytics CSV:[/bold] "
+                f"{pipeline.config.output_path}/../retain_analytics.csv"
+            )
         
         # Print summary
         print_feature_summary(result)

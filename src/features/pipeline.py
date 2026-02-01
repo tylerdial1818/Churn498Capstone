@@ -280,6 +280,7 @@ class FeaturePipeline:
         self, 
         result: PipelineResult, 
         output_path: str | Path | None = None,
+        export_analytics: bool = False,
     ) -> Path:
         """
         Save pipeline results to disk.
@@ -287,6 +288,8 @@ class FeaturePipeline:
         Args:
             result: Pipeline execution result
             output_path: Override output path from config
+            export_analytics: Also write an analyst-friendly CSV
+                to data/processed/retain_analytics.csv
         
         Returns:
             Path to saved features file
@@ -322,6 +325,14 @@ class FeaturePipeline:
             json.dump(result.metadata, f, indent=2)
         
         logger.info(f"Saved features to {features_file}")
+        
+        # Export analytics CSV for ad-hoc reporting
+        if export_analytics:
+            from .export import export_analytics_csv
+            
+            analytics_dir = output_path.parent  # data/processed/
+            export_analytics_csv(self.engine, result, output_dir=analytics_dir)
+        
         return features_file
 
 
