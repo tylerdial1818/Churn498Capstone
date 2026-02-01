@@ -57,8 +57,7 @@ def _fetch_account_metadata(engine: Engine) -> pd.DataFrame:
         s.plan_type,
         s.status AS subscription_status,
         s.start_date AS subscription_start,
-        s.end_date   AS subscription_end,
-        s.cancel_reason
+        s.end_date   AS subscription_end
     FROM accounts a
     JOIN subscriptions s ON a.account_id = s.account_id
     ORDER BY a.account_id

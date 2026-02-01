@@ -394,8 +394,8 @@ class FinancialTransformer(BaseTransformer):
             SELECT
                 account_id,
                 COUNT(DISTINCT payment_method) as unique_methods,
-                AVG(CASE WHEN status = 'completed' THEN amount END) as avg_payment,
-                MAX(CASE WHEN status = 'completed' THEN payment_date END) as last_payment_date,
+                AVG(CASE WHEN status = 'success' THEN amount END) as avg_payment,
+                MAX(CASE WHEN status = 'success' THEN payment_date END) as last_payment_date,
                 MIN(payment_date) as first_payment_date,
                 COUNT(DISTINCT DATE_TRUNC('month', payment_date)) as months_with_payments
             FROM payments
@@ -485,7 +485,7 @@ class SupportTransformer(BaseTransformer):
             AVG(
                 EXTRACT(EPOCH FROM (resolved_at - created_at)) / 3600
             ) as avg_resolution_hours,
-            SUM(CASE WHEN resolution_status != 'resolved' THEN 1 ELSE 0 END) as open_ticket_count
+            SUM(CASE WHEN resolved_at IS NULL THEN 1 ELSE 0 END) as open_ticket_count
         FROM support_tickets
         WHERE created_at < :reference_date
           {account_filter}
