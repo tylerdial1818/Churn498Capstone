@@ -89,8 +89,15 @@ mlops = [
     "bentoml>=1.1.0",
 ]
 
+agents = [
+    "langchain>=0.3.0",
+    "langchain-anthropic>=0.3.0",
+    "langgraph>=0.2.0",
+    "langchain-community>=0.3.0",
+]
+
 all = [
-    "retain[dev,web,mlops]",
+    "retain[dev,web,mlops,agents]",
 ]
 
 [project.scripts]
