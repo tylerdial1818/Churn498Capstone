@@ -1,4 +1,6 @@
-.PHONY: help install install-dev db-init db-load db-reset db-check test lint format clean
+.PHONY: help install install-dev db-init db-load db-reset db-check test lint format clean \
+	frontend-install frontend-dev frontend-build frontend-test frontend-lint \
+	api-dev api-dev-demo dev dev-demo test-app test-frontend test-all
 
 # Default target
 help:
@@ -20,6 +22,22 @@ help:
 	@echo "  make lint          Run linters (ruff, mypy)"
 	@echo "  make format        Format code (black, isort)"
 	@echo "  make clean         Remove build artifacts"
+	@echo ""
+	@echo "Frontend Commands:"
+	@echo "  make frontend-install  Install frontend dependencies"
+	@echo "  make frontend-dev      Start frontend dev server"
+	@echo "  make frontend-build    Build frontend for production"
+	@echo "  make frontend-test     Run frontend tests"
+	@echo "  make frontend-lint     Lint frontend code"
+	@echo ""
+	@echo "API Commands:"
+	@echo "  make api-dev           Start API server (live DB)"
+	@echo "  make api-dev-demo      Start API server (demo mode)"
+	@echo ""
+	@echo "Full Stack Commands:"
+	@echo "  make dev               Start API + frontend (live DB)"
+	@echo "  make dev-demo          Start API + frontend (demo mode)"
+	@echo "  make test-all          Run all test suites"
 	@echo ""
 	@echo "Data Commands:"
 	@echo "  make data-generate Generate synthetic dataset"
@@ -107,3 +125,55 @@ clean:
 	rm -rf .ruff_cache/
 	find . -type d -name __pycache__ -exec rm -rf {} +
 	find . -type f -name "*.pyc" -delete
+
+# =============================================================================
+# FRONTEND
+# =============================================================================
+
+frontend-install:
+	cd frontend && npm install
+
+frontend-dev:
+	cd frontend && npm run dev
+
+frontend-build:
+	cd frontend && npm run build
+
+frontend-test:
+	cd frontend && npm run test
+
+frontend-lint:
+	cd frontend && npm run lint
+
+# =============================================================================
+# BACKEND API
+# =============================================================================
+
+api-dev:
+	uvicorn src.app.main:app --reload --host 0.0.0.0 --port 8000
+
+api-dev-demo:
+	DEMO_MODE=true uvicorn src.app.main:app --reload --host 0.0.0.0 --port 8000
+
+# =============================================================================
+# FULL STACK
+# =============================================================================
+
+dev:
+	make api-dev & make frontend-dev
+
+dev-demo:
+	make api-dev-demo & make frontend-dev
+
+# =============================================================================
+# COMBINED TESTING
+# =============================================================================
+
+test-app:
+	pytest tests/test_app/ -v --tb=short
+
+test-frontend:
+	cd frontend && npm run test
+
+test-all:
+	make test && make test-app && make test-frontend
