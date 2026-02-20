@@ -51,3 +51,11 @@ def set_db_engine(engine: Engine | None) -> None:
     """Set the database engine (used by lifespan and tests)."""
     global _engine
     _engine = engine
+
+
+@lru_cache
+def get_agent_config():
+    """Return cached AgentConfig for dependency injection."""
+    from src.agents.config import AgentConfig
+
+    return AgentConfig()

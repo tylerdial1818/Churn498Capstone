@@ -14,7 +14,7 @@ src/
 ├── features/   # Feature engineering pipeline (transformers, validation, export)
 ├── models/     # ML training, evaluation, registry, scoring, monitoring
 ├── agents/     # LangGraph multi-agent AI workflows (DDP pipeline, intervention drafter)
-└── app/        # Web application (FastAPI, not yet implemented)
+└── app/        # Web application (FastAPI API + agent-backed routes)
 ```
 
 Each module follows the same structure: `config.py` (dataclass configs) → core logic → `build_*.py` (CLI entry point) → `__init__.py` (public API via `__all__`).
@@ -48,6 +48,11 @@ python -m src.models.build_models monitor --save         # Drift detection
 python -m src.agents.pipelines.ddp_pipeline                # Run full DDP pipeline
 python -m src.agents.intervention.drafter --help           # Draft retention emails
 python -m src.agents.intervention.drafter --account-id ACC_00000001 --churn-driver disengagement
+
+# App
+uvicorn src.app.main:app --reload              # Start API server (dev)
+python -m src.agents.early_warning.detector     # Run early warning detection
+python -m src.agents.analysis.analyzer --page executive_summary  # Generate dashboard narrative
 
 # Testing & Quality
 make test                     # pytest tests/ -v
@@ -148,19 +153,33 @@ Schema file: `sql/schema.sql`
 ### src/agents/
 - `config.py`: `AgentConfig` dataclass (model, thresholds, context limits)
 - `state.py`: `RetainAgentState` TypedDict with LangGraph annotations (`add_messages` reducer, `operator.add` for errors)
-- `prompts.py`: System prompts for 5 roles: `SUPERVISOR_PROMPT`, `DETECTION_AGENT_PROMPT`, `DIAGNOSIS_AGENT_PROMPT`, `PRESCRIPTION_AGENT_PROMPT`, `INTERVENTION_DRAFTER_PROMPT`
-- `tools.py`: 13 LangChain `@tool` wrappers (scoring, features, SHAP, DB queries, cohort clustering, monitoring). Lazy imports inside function bodies to avoid import-time failures. `ALL_TOOLS`, `DETECTION_TOOLS`, `DIAGNOSIS_TOOLS`, `PRESCRIPTION_TOOLS` registries.
+- `prompts.py`: System prompts for 7 roles: `SUPERVISOR_PROMPT`, `DETECTION_AGENT_PROMPT`, `DIAGNOSIS_AGENT_PROMPT`, `PRESCRIPTION_AGENT_PROMPT`, `INTERVENTION_DRAFTER_PROMPT`, `EARLY_WARNING_AGENT_PROMPT`, `ANALYSIS_AGENT_PROMPT`
+- `tools.py`: 22 LangChain `@tool` wrappers (scoring, features, SHAP, DB queries, cohort clustering, monitoring, KPIs, risk transitions, engagement/support/payment trends, cohort analysis). Lazy imports inside function bodies to avoid import-time failures. `ALL_TOOLS`, `DETECTION_TOOLS`, `DIAGNOSIS_TOOLS`, `PRESCRIPTION_TOOLS`, `EARLY_WARNING_TOOLS`, `ANALYSIS_TOOLS` registries.
 - `utils.py`: `format_dataframe_as_markdown()`, `safe_json_serialize()`, `validate_account_id()`, `truncate_for_context()`
 - `pipelines/ddp_pipeline.py`: LangGraph `StateGraph` with 5 nodes (supervisor, detect, diagnose, prescribe, review). Supervisor routes via `match` statement. Human-in-the-loop via `interrupt_before=["review"]`.
 - `pipelines/ddp_nodes.py`: Node implementations with `_run_agent_loop()` inner tool-calling loop, `_extract_json_from_response()` JSON parser (raw, code fence, brace extraction).
 - `intervention/strategies.py`: 5 `InterventionStrategy` definitions in `STRATEGY_REGISTRY`, deterministic `select_strategy()` with business rules (no discounts < 30 days tenure, payment_failed always gets payment_recovery).
 - `intervention/drafter.py`: Standalone LangGraph agent with `DrafterState` TypedDict, 4 nodes (diagnose_driver, select_strategy, draft_email, human_review). `draft_intervention()` convenience function.
 - `intervention/email_renderer.py`: `render_as_markdown()`, `render_as_html()` (inline styles only), `render_as_plaintext()`, `render_comparison()` for A/B variants.
+- `early_warning/detector.py`: LangGraph `StateGraph` with 3 nodes (score_comparison, investigate_escalations, group_and_report). `score_comparison` and `group_and_report` are deterministic; `investigate_escalations` uses LLM. `run_early_warning()` convenience function.
+- `early_warning/alerts.py`: `RiskTransition`, `AlertGroup`, `EarlyWarningReport` dataclasses. `classify_transitions()`, `compute_alert_priority()`, `format_alert_report_markdown()` — all deterministic.
+- `analysis/analyzer.py`: LangGraph `StateGraph` with 2 nodes (gather_data, generate_narrative). `gather_data` is deterministic (calls tools directly per page_context); `generate_narrative` uses LLM. `run_analysis()` convenience function with `PageContext` enum.
+- `analysis/narratives.py`: `PageContext` enum, `KPIDefinition` with `KPI_REGISTRY`, `NarrativeSection`, `AnalysisNarrative` dataclasses. `assess_kpi_health()`, `compute_overall_sentiment()` — all deterministic.
+
+### src/app/
+- `main.py`: FastAPI app factory with CORS. `create_app()` includes all routers under `/api`.
+- `dependencies.py`: `get_agent_config()` (cached), `get_db_engine()` for FastAPI dependency injection.
+- `agent_schemas.py`: Pydantic v2 response models: `DashboardResponse`, `AtRiskResponse`, `EarlyWarningAlertResponse`, `AnalyticsResponse`, `AnalysisNarrativeResponse`, `PrescriptionResponse`, `InterventionDraftResponse`, `ExportResponse`.
+- `routes/dashboard.py`: `GET /api/dashboard` — Analysis Agent in executive_summary mode.
+- `routes/at_risk.py`: `GET /api/at-risk` — high-risk accounts + Early Warning Agent, `GET /api/at-risk/{account_id}` — single account detail.
+- `routes/analytics.py`: `GET /api/analytics` — Analysis Agent in analytics_deep_dive mode, returns raw data for charts + narrative.
+- `routes/prescriptions.py`: `GET /api/prescriptions` — deterministic strategy matching + Analysis Agent narrative.
+- `routes/interventions.py`: `POST /api/interventions/draft` — Intervention Drafter, `POST /api/interventions/export` — render + integration payloads (HubSpot, Salesforce, Marketo, Braze, email), `GET /api/interventions/integrations` — supported integrations list.
 
 ## Testing
 
 - Framework: **pytest** with `-v --tb=short`
-- Test files: `tests/test_data.py`, `tests/test_features.py`, `tests/test_models.py`, `tests/test_agents_foundation.py`, `tests/test_ddp_pipeline.py`, `tests/test_intervention_drafter.py`
+- Test files: `tests/test_data.py`, `tests/test_features.py`, `tests/test_models.py`, `tests/test_agents_foundation.py`, `tests/test_ddp_pipeline.py`, `tests/test_intervention_drafter.py`, `tests/test_early_warning.py`, `tests/test_analysis_agent.py`, `tests/test_app_agents.py`
 - Integration tests: `scripts/test_integration.py`
 - Fixtures use `seed=42` for reproducibility, `make_classification()` for synthetic ML data
 - Mocking: `unittest.mock` (MagicMock, patch, patch.dict) for DB and LLM dependencies. Patch at source module (e.g., `src.data.database.get_engine`, `src.models.score.BatchScorer`), not at consumer module.

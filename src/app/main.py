@@ -19,6 +19,13 @@ from fastapi.responses import JSONResponse
 from .config import get_app_config
 from .dependencies import set_db_engine
 from .routers import accounts, agents, analytics, dashboard, interventions, prescriptions
+from .routes import (
+    analytics as agent_analytics,
+    at_risk as agent_at_risk,
+    dashboard as agent_dashboard,
+    interventions as agent_interventions,
+    prescriptions as agent_prescriptions,
+)
 from .schemas import ErrorResponse, HealthResponse
 
 logger = logging.getLogger(__name__)
@@ -75,6 +82,14 @@ def create_app() -> FastAPI:
     app.include_router(prescriptions.router, prefix=prefix)
     app.include_router(interventions.router, prefix=prefix)
     app.include_router(agents.router, prefix=prefix)
+
+    # Agent-backed routes (under /api, separate from /api/v1)
+    agent_prefix = "/api"
+    app.include_router(agent_dashboard.router, prefix=agent_prefix)
+    app.include_router(agent_at_risk.router, prefix=agent_prefix)
+    app.include_router(agent_analytics.router, prefix=agent_prefix)
+    app.include_router(agent_prescriptions.router, prefix=agent_prefix)
+    app.include_router(agent_interventions.router, prefix=agent_prefix)
 
     # Health check
     @app.get(f"{prefix}/health", response_model=HealthResponse, tags=["System"])
