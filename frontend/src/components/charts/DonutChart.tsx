@@ -37,7 +37,7 @@ export default function DonutChart({
               borderRadius: 8,
               fontSize: 12,
             }}
-            formatter={(value: number) => [value.toLocaleString(), ""]}
+            formatter={(value?: number) => [(value ?? 0).toLocaleString(), ""]}
           />
         </PieChart>
       </ResponsiveContainer>

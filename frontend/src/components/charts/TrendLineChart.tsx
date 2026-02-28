@@ -45,7 +45,7 @@ export default function TrendLineChart({
             fontSize: 12,
           }}
           labelStyle={{ color: "#f0f0f3" }}
-          formatter={(value: number) => [valueFormatter(value), ""]}
+          formatter={(value?: number) => [valueFormatter(value ?? 0), ""]}
         />
         <Line
           type="monotone"

@@ -50,7 +50,7 @@ export default function BarChart({
               borderRadius: 8,
               fontSize: 12,
             }}
-            formatter={(value: number) => [valueFormatter(value), ""]}
+            formatter={(value?: number) => [valueFormatter(value ?? 0), ""]}
           />
           <Bar dataKey="value" fill={color} radius={[0, 4, 4, 0]} />
         </RechartsBarChart>
@@ -81,7 +81,7 @@ export default function BarChart({
             borderRadius: 8,
             fontSize: 12,
           }}
-          formatter={(value: number) => [valueFormatter(value), ""]}
+          formatter={(value?: number) => [valueFormatter(value ?? 0), ""]}
         />
         <Bar dataKey="value" fill={color} radius={[4, 4, 0, 0]} />
       </RechartsBarChart>
